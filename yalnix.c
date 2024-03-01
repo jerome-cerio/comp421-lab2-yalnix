@@ -28,9 +28,17 @@ void trap_tty_transmit_handler(ExceptionInfo *info);
 SavedContext *MySwitchFunc(SavedContext *ctxp, void *p1, void *p2);
 SavedContext *MyCFunc(SavedContext *ctxp, void *p1, void *p2);
 
-main(int argc, char **argv)
-{
-    return 0;
+
+void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, char **cmd_args) {
+
+    // Initialize structures
+
+    // Create the idle process - pid0
+
+    // Create an init process - pid1
+
+    // Enable virtual memory
+    WriteRegister(REG_VM_ENABLE, 1)
 }
 
 void trap_kernel_handler(ExceptionInfo *info) {
