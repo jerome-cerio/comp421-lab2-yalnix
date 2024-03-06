@@ -3,6 +3,13 @@
 #include <comp421/yalnix.h>
 #include <comp421/hardware.h>
 
+// Type definition for an interrupt handler
+typedef void (*interrupt_handler_t)(ExceptionInfo);
+
+struct interrupt_vector_table {
+    interrupt_handler_t interrupt_handlers[TRAP_VECTOR_SIZE - 1];
+}
+
 struct pcb {
 
 }
@@ -32,6 +39,8 @@ SavedContext *MyCFunc(SavedContext *ctxp, void *p1, void *p2);
 void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, char **cmd_args) {
 
     // Initialize structures
+
+    // Construct page tables
 
     // Create the idle process - pid0
 
