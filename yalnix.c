@@ -103,37 +103,44 @@ void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, ch
         // Before Region 0 kernel stack in memory 
         if (i < KERNEL_STACK_BASE >> PAGESHIFT) {
             region0_pt[i].pfn = i; 
-            region_pt[i].kprot = PROT_NONE; 
-            region_pt[i].uprot = PROT_NONE; 
-            region_pt[i].valid = INVALID; 
+            region0_pt[i].kprot = PROT_NONE; 
+            region0_pt[i].uprot = PROT_NONE; 
+            region0_pt[i].valid = INVALID; 
 
         // In Region 0 kernel stack in memory 
         } else if (i < KERNEL_STACK_LIMIT >> PAGESHIFT) {
             region0_pt[i].pfn = i; 
-            region_pt[i].kprot = PROT_READ | PROT_WRITE; 
-            region_pt[i].uprot = PROT_NONE; 
-            region_pt[i].valid = VALID; 
+            region0_pt[i].kprot = PROT_READ | PROT_WRITE; 
+            region0_pt[i].uprot = PROT_NONE; 
+            region0_pt[i].valid = VALID; 
 
         // In Region 1 kernel text pages of kernel heap in memory 
         } else if (i < &_etext >> PAGESHIFT) {
             region1_pt[i].pfn = i; 
             region1_pt[i].kprot = PROT_EXEC; 
-            region_pt[i].uprot = PROT_NONE; 
-            region_pt[i].valid = VALID; 
+            region1_pt[i].uprot = PROT_NONE; 
+            region1_pt[i].valid = VALID; 
 
         // In Region 1 kernel data/bss/heap pages of kernel heap in memory 
         } else if (i < current_break >> PAGESHIFT) {
             region1_pt[i].pfn = i; 
             region1_pt[i].kprot = PROT_READ | PROT_WRITE; 
-            region_pt[i].uprot = PROT_NONE; 
-            region_pt[i].valid = VALID; 
+            region1_pt[i].uprot = PROT_NONE; 
+            region1_pt[i].valid = VALID; 
 
         // In Region 1 space under our allocated data structures in memory 
         } else if (i < VMEM_1_LIMIT - (PAGESIZE * 2)) {
-            region0_pt[i].pfn = i; 
-            region_pt[i].kprot = PROT_NONE; 
-            region_pt[i].uprot = PROT_NONE; 
-            region_pt[i].valid = INVALID; 
+            region1_pt[i].pfn = i; 
+            region1_pt[i].kprot = PROT_NONE; 
+            region1_pt[i].uprot = PROT_NONE; 
+            region1_pt[i].valid = INVALID; 
+
+        // In Region 1 space with our allocated data stuctures in memory 
+        } else {
+            region1_pt[i].pfn = i; 
+            region1_pt[i].kprot = PROT_READ | PROT_WRITE; 
+            region1_pt[i].uprot = PROT_NONE; 
+            region1_pt[i].valid = VALID; 
         }
     }
 
