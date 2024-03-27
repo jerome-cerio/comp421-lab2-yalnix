@@ -109,6 +109,11 @@ int getFreePage() {
     return free_page; 
 }
 
+void createRegion0PT(void *addr) {
+
+
+}
+
 void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, char **cmd_args) {
     int i; 
     current_break = orig_brk; 
@@ -147,7 +152,6 @@ void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, ch
                 interrupt_vector_table[i] = NULL;
                 break;
         }
-
     }
 
     // Initialize the REG_VECTOR_BASE to point to interrupt vector table 
@@ -164,7 +168,7 @@ void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, ch
 
         // Before Region 0 kernel stack in memory 
         if (i < KERNEL_STACK_BASE >> PAGESHIFT) {
-            region0_pt[i].pfn = i; 
+            region0_pt[i].pfn = -1; 
             region0_pt[i].kprot = PROT_NONE; 
             region0_pt[i].uprot = PROT_NONE; 
             region0_pt[i].valid = INVALID; 
@@ -172,6 +176,7 @@ void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, ch
         // In Region 0 kernel stack in memory 
         } else if (i < KERNEL_STACK_LIMIT >> PAGESHIFT) {
             region0_pt[i].pfn = i; 
+            free_page_tracker[i] = UNFREE; 
             region0_pt[i].kprot = PROT_READ | PROT_WRITE; 
             region0_pt[i].uprot = PROT_NONE; 
             region0_pt[i].valid = VALID; 
@@ -179,6 +184,7 @@ void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, ch
         // In Region 1 kernel text pages of kernel heap in memory 
         } else if (i < (long int) &_etext >> PAGESHIFT) {
             region1_pt[i].pfn = i; 
+            free_page_tracker[i] = UNFREE; 
             region1_pt[i].kprot = PROT_EXEC; 
             region1_pt[i].uprot = PROT_NONE; 
             region1_pt[i].valid = VALID; 
@@ -186,13 +192,14 @@ void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, ch
         // In Region 1 kernel data/bss/heap pages of kernel heap in memory 
         } else if (i < (long int) current_break >> PAGESHIFT) {
             region1_pt[i].pfn = i; 
+            free_page_tracker[i] = UNFREE; 
             region1_pt[i].kprot = PROT_READ | PROT_WRITE; 
             region1_pt[i].uprot = PROT_NONE; 
             region1_pt[i].valid = VALID; 
 
         // In Region 1 space under our allocated data structures in memory 
         } else if (i < VMEM_1_LIMIT - (PAGESIZE * 2)) {
-            region1_pt[i].pfn = i; 
+            region1_pt[i].pfn = -1; 
             region1_pt[i].kprot = PROT_NONE; 
             region1_pt[i].uprot = PROT_NONE; 
             region1_pt[i].valid = INVALID; 
@@ -200,6 +207,7 @@ void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, ch
         // In Region 1 space with our allocated data stuctures in memory 
         } else {
             region1_pt[i].pfn = i; 
+            free_page_tracker[i] = UNFREE; 
             region1_pt[i].kprot = PROT_READ | PROT_WRITE; 
             region1_pt[i].uprot = PROT_NONE; 
             region1_pt[i].valid = VALID; 
@@ -210,20 +218,34 @@ void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, ch
     WriteRegister(REG_PTR0, (RCS421RegVal) region0_pt); 
     WriteRegister(REG_PTR1, (RCS421RegVal) region1_pt); 
 
-    // Create the idle process - pid0
-    char *file_name = cmd_args[0]; 
-    char **other_args = &cmd_args[1]; 
-    LoadProgram(file_name, other_args, info);
-    // Create an init process - pid1
-    //LoadProgram()
-
     // Enable virtual memory
     WriteRegister(REG_VM_ENABLE, 1); 
     vm_enabled = 1; 
+
+    // Create the idle process - pid0
+    LoadProgram("idle", cmd_args, info); 
+
+    // NOT DONEEEE CONTEXT SWITCHING NEEDS TO HAPPEN
+    // THERE ARE DIFF TYPES OF CONTEXT SWITCH FUNCTIONS 
+    // NEW REGION 0 PAGE TABLE CREATION OR COPYING HAPPENS WITHIN THEM 
+
+    // Create an init process - pid1
+    if (cmd_args[0] != NULL) {
+
+        // NOT DONEEE MAKE SURE TO CHECK STATUS OF LOADPROGRAM AFTER 
+        LoadProgram(cmd_args[0], cmd_args, info); 
+    } else {
+
+        // NOT DONEEE MAKE SURE TO CHECK STATUS OF LOADPROGRAM AFTER 
+        LoadProgram("init", cmd_args, info); 
+    }
+    char **other_args = &cmd_args[1]; 
+    LoadProgram(file_name, other_args, info);
 }
 
 // Procedure called by malloc to add more pages to kernel's memory 
 int SetKernelBrk(void *addr) {
+    int i; 
 
     // Virtual memory not yet enabled, give more pages in physical memory 
     if (vm_enabled == 0) {
@@ -232,8 +254,41 @@ int SetKernelBrk(void *addr) {
         return 0; 
     // Virtual memory has been enabled, give more pages in virtual memory 
     } else {
-        return 0; 
 
+        // check if address is valid (in region 1: above kernel heap and 
+        // below allocated memory for page table/context switching)
+        if ((addr > current_break) && (addr < (VMEM_1_LIMIT - PAGESIZE * 4))) {
+
+            int curr_top_page = current_break >> PAGESHIFT; 
+            int target_page = addr >> PAGESHIFT; 
+            int pages = target_page - curr_top_page; 
+            
+            for (i = 1; i <= pages; i++) {
+
+                int new_page = curr_top_page + i; 
+                region1_pt[new_page].valid = VALID;  
+                region1_pt[new_page].kprot = PROT_READ | PROT_WRITE; 
+                region1_pt[new_page].uprot = PROT_NONE; 
+
+                int new_physical_page =  getFreePage(); 
+
+                // check there is enough physical memory 
+                if (new_physical_page != -1) {
+
+                    region1_pt[new_page].pfn = new_physical_page; 
+                    free_page_tracker[new_physical_page] = UNFREE; 
+                // not enough physical memory 
+                } else {
+
+                    return -1; 
+                }
+            }
+            return 0; 
+        // invalid address
+        } else {
+
+            return -1; 
+        }
     }
 }
 
@@ -462,6 +517,9 @@ LoadProgram(char *name, char **args, ExceptionInfo *info)
 
             free_page_tracker[i] = FREE; 
             region0_pt[i].valid = INVALID; 
+            region0_pt[i].kprot = PROT_NONE; 
+            region0_pt[i].uprot = PROT_NONE; 
+            region0_pt[i].pfn = -1; 
             num_free_pages++; 
         }
     }
@@ -487,7 +545,19 @@ LoadProgram(char *name, char **args, ExceptionInfo *info)
         region0_pt[i].valid = VALID; 
         region0_pt[i].kprot = PROT_READ | PROT_WRITE; 
         region0_pt[i].uprot = PROT_READ | PROT_EXEC; 
-        region0_pt[i].pfn = getFreePage(); 
+
+        int new_physical_page = getFreePage(); 
+        
+        // check there is enough physical memory 
+        if (new_physical_page != -1) {
+
+            region0_pt[i].pfn = new_physical_page; 
+            free_page_tracker[new_physical_page] = UNFREE; 
+        // not enough memory 
+        } else {
+
+            return -1; 
+        }
     }
 
     /* Then the data and bss pages */
@@ -503,7 +573,19 @@ LoadProgram(char *name, char **args, ExceptionInfo *info)
         region0_pt[i].valid = VALID; 
         region0_pt[i].kprot = PROT_READ | PROT_WRITE; 
         region0_pt[i].uprot = PROT_READ | PROT_WRITE; 
-        region0_pt[i].pfn = getFreePage(); 
+        
+        int new_physical_page = getFreePage(); 
+        
+        // check there is enough physical memory 
+        if (new_physical_page != -1) {
+
+            region0_pt[i].pfn = new_physical_page; 
+            free_page_tracker[new_physical_page] = UNFREE; 
+        // not enough memory 
+        } else {
+
+            return -1; 
+        }
     }
 
     /* And finally the user stack pages */
@@ -521,7 +603,19 @@ LoadProgram(char *name, char **args, ExceptionInfo *info)
         region0_pt[i].valid = VALID; 
         region0_pt[i].kprot = PROT_READ | PROT_WRITE; 
         region0_pt[i].uprot = PROT_READ | PROT_WRITE; 
-        region0_pt[i].pfn = getFreePage(); 
+        
+        int new_physical_page = getFreePage(); 
+        
+        // check there is enough physical memory 
+        if (new_physical_page != -1) {
+
+            region0_pt[i].pfn = new_physical_page; 
+            free_page_tracker[new_physical_page] = UNFREE; 
+        // not enough memory 
+        } else {
+
+            return -1; 
+        }
     }
 
     /*
