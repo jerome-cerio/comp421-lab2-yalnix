@@ -1,12 +1,16 @@
 #include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <string.h>
 #include <stdlib.h>
 #include <comp421/yalnix.h>
 #include <comp421/hardware.h>
+#include <comp421/loadinfo.h>
 
 #define VALID   1 
 #define INVALID 0
 #define FREE 1
-#define UNFREE 0 
+#define UNFREE 0         
 
 // Type definition for an interrupt handler
 typedef void (*interrupt_handler_t)(ExceptionInfo);
@@ -18,10 +22,11 @@ struct interrupt_vector_table {
 
 // Global variables 
 int vm_enabled = 0; 
-int num_free_pages = 0; 
+int num_free_pages = 0;
+int num_pages;  
 
 // Points to the current kernel break which starts at orig_brk 
-void *current_break = VMEM_1_BASE; 
+void *current_break;  
 
 // Array to keep track of free pages 
 int *free_page_tracker; 
@@ -58,16 +63,17 @@ SavedContext *MyCFunc(SavedContext *ctxp, void *p1, void *p2);
  *  of pages (whether they are free or not). 
  */
 void initFreePagesList(unsigned int pmem_size) {
+    int i; 
 
     // Find the already used pages
-    int num_physical_pages = pmem_size / PAGESIZE;
+    int num_physical_pages = pmem_size >> PAGESHIFT;
 
     free_page_tracker = malloc(num_physical_pages * sizeof(int)); 
 
     int used_pages_min = DOWN_TO_PAGE(VMEM_1_BASE) / PAGESIZE;
     int used_pages_max = UP_TO_PAGE(current_break) / PAGESIZE;
 
-    for (int i = MEM_INVALID_PAGES; i < num_physical_pages; i++) {
+    for (i = MEM_INVALID_PAGES; i < num_physical_pages; i++) {
         
         if (i < used_pages_min || i > used_pages_max) {
             // The page is free. Add it to the free list
@@ -86,14 +92,15 @@ void initFreePagesList(unsigned int pmem_size) {
  *     -1 if there aren free pages remaining at the moment 
  */
 int getFreePage() {
+    int i; ; 
     int free_page = -1; 
 
-    for (int i = 0; i < sizeof(free_page_tracker); i++) {
+    for (i = 0; i < num_pages; i++) {
 
         if (free_page_tracker[i] == FREE) {
 
             free_page = i; 
-            free_page_tracker[i] == UNFREE;
+            free_page_tracker[i] = UNFREE;
             num_free_pages--;  
             break; 
         }
@@ -103,6 +110,9 @@ int getFreePage() {
 }
 
 void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, char **cmd_args) {
+    int i; 
+    current_break = orig_brk; 
+    num_pages = pmem_size >> PAGESHIFT; 
 
     TracePrintf(1, "Entering KernelStart");
 
@@ -110,7 +120,7 @@ void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, ch
     void (*interrupt_vector_table[TRAP_VECTOR_SIZE])(ExceptionInfo *info); 
 
     // Initialize the interrupt vector table entries
-    for (int i = 0; i < TRAP_VECTOR_SIZE; i++) {
+    for (i = 0; i < TRAP_VECTOR_SIZE; i++) {
         switch (i) {
             case TRAP_KERNEL:
                 interrupt_vector_table[i] = trap_kernel_handler;
@@ -147,15 +157,65 @@ void KernelStart(ExceptionInfo *info, unsigned int pmem_size, void *orig_brk, ch
     initFreePagesList(pmem_size);
 
     // Initialize the Region 0 and Region 1 page tables
-    initPageTables()
+    region0_pt = (struct pte *) VMEM_1_LIMIT - PAGESIZE; 
+    region1_pt = (struct pte *) VMEM_1_LIMIT - (PAGESIZE * 2);
+
+    for (i = 0; i < VMEM_LIMIT >> PAGESHIFT; i++) {
+
+        // Before Region 0 kernel stack in memory 
+        if (i < KERNEL_STACK_BASE >> PAGESHIFT) {
+            region0_pt[i].pfn = i; 
+            region0_pt[i].kprot = PROT_NONE; 
+            region0_pt[i].uprot = PROT_NONE; 
+            region0_pt[i].valid = INVALID; 
+
+        // In Region 0 kernel stack in memory 
+        } else if (i < KERNEL_STACK_LIMIT >> PAGESHIFT) {
+            region0_pt[i].pfn = i; 
+            region0_pt[i].kprot = PROT_READ | PROT_WRITE; 
+            region0_pt[i].uprot = PROT_NONE; 
+            region0_pt[i].valid = VALID; 
+
+        // In Region 1 kernel text pages of kernel heap in memory 
+        } else if (i < (long int) &_etext >> PAGESHIFT) {
+            region1_pt[i].pfn = i; 
+            region1_pt[i].kprot = PROT_EXEC; 
+            region1_pt[i].uprot = PROT_NONE; 
+            region1_pt[i].valid = VALID; 
+
+        // In Region 1 kernel data/bss/heap pages of kernel heap in memory 
+        } else if (i < (long int) current_break >> PAGESHIFT) {
+            region1_pt[i].pfn = i; 
+            region1_pt[i].kprot = PROT_READ | PROT_WRITE; 
+            region1_pt[i].uprot = PROT_NONE; 
+            region1_pt[i].valid = VALID; 
+
+        // In Region 1 space under our allocated data structures in memory 
+        } else if (i < VMEM_1_LIMIT - (PAGESIZE * 2)) {
+            region1_pt[i].pfn = i; 
+            region1_pt[i].kprot = PROT_NONE; 
+            region1_pt[i].uprot = PROT_NONE; 
+            region1_pt[i].valid = INVALID; 
+
+        // In Region 1 space with our allocated data stuctures in memory 
+        } else {
+            region1_pt[i].pfn = i; 
+            region1_pt[i].kprot = PROT_READ | PROT_WRITE; 
+            region1_pt[i].uprot = PROT_NONE; 
+            region1_pt[i].valid = VALID; 
+        }
+    }
 
     // Initialize the page table registers to point to their respective page tables 
     WriteRegister(REG_PTR0, (RCS421RegVal) region0_pt); 
     WriteRegister(REG_PTR1, (RCS421RegVal) region1_pt); 
 
     // Create the idle process - pid0
-
+    char *file_name = cmd_args[0]; 
+    char **other_args = &cmd_args[1]; 
+    LoadProgram(file_name, other_args, info);
     // Create an init process - pid1
+    //LoadProgram()
 
     // Enable virtual memory
     WriteRegister(REG_VM_ENABLE, 1); 
@@ -168,39 +228,62 @@ int SetKernelBrk(void *addr) {
     // Virtual memory not yet enabled, give more pages in physical memory 
     if (vm_enabled == 0) {
         current_break = addr; 
-    
+
+        return 0; 
     // Virtual memory has been enabled, give more pages in virtual memory 
     } else {
+        return 0; 
 
     }
 }
 
 void trap_kernel_handler(ExceptionInfo *info) {
 
+    (void) info;
+    TracePrintf(1, "trap kernel handler"); 
+    Halt();  
 }
 
 void trap_clock_handler(ExceptionInfo *info) {
 
+    (void) info;
+    TracePrintf(1, "trap clock handler"); 
+    Halt(); 
 }
 
 void trap_illegal_handler(ExceptionInfo *info) {
 
+    (void) info;
+    TracePrintf(1, "in trap illegal handler"); 
+    Halt(); 
 }
 
 void trap_memory_handler(ExceptionInfo *info) {
 
+    (void) info;
+    TracePrintf(1, "in trap memory handler"); 
+    Halt(); 
 }
 
 void trap_math_handler(ExceptionInfo *info) {
 
+    (void) info;
+    TracePrintf(1, "in trap math handler"); 
+    Halt(); 
 }
 
 void trap_tty_receive_handler(ExceptionInfo *info) {
 
+    (void) info;
+    TracePrintf(1, "in trap tty recieve handler"); 
+    Halt(); 
 }
 
 void trap_tty_transmit_handler(ExceptionInfo *info) {
 
+    (void) info;
+    TracePrintf(1, "in trap tty transmit handler"); 
+    Halt(); 
 }
 
 /*
@@ -372,7 +455,7 @@ LoadProgram(char *name, char **args, ExceptionInfo *info)
    
     // >>>> Leave the first MEM_INVALID_PAGES number of PTEs in the
     // >>>> Region 0 page table unused (and thus invalid)
-    for (int i = 0; i < MEM_INVALID_PAGES; i++) {
+    for (i = 0; i < MEM_INVALID_PAGES; i++) {
         
         // if valid set to invalid and free page 
         if (region0_pt[i].valid == VALID) {
@@ -399,7 +482,7 @@ LoadProgram(char *name, char **args, ExceptionInfo *info)
     // >>>>     uprot = PROT_READ | PROT_EXEC
     // >>>>     pfn   = a new page of physical memory
     int text_pages_limit = MEM_INVALID_PAGES + text_npg; 
-    for (int i = MEM_INVALID_PAGES; i < text_pages_limit; i++) {
+    for (i = MEM_INVALID_PAGES; i < text_pages_limit; i++) {
 
         region0_pt[i].valid = VALID; 
         region0_pt[i].kprot = PROT_READ | PROT_WRITE; 
@@ -415,7 +498,7 @@ LoadProgram(char *name, char **args, ExceptionInfo *info)
     // >>>>     uprot = PROT_READ | PROT_WRITE
     // >>>>     pfn   = a new page of physical memory
     int data_bss_limit = text_pages_limit + data_bss_npg; 
-    for (int i = text_pages_limit; i < data_bss_limit; i++) {
+    for (i = text_pages_limit; i < data_bss_limit; i++) {
 
         region0_pt[i].valid = VALID; 
         region0_pt[i].kprot = PROT_READ | PROT_WRITE; 
@@ -433,7 +516,7 @@ LoadProgram(char *name, char **args, ExceptionInfo *info)
     // >>>>     uprot = PROT_READ | PROT_WRITE
     // >>>>     pfn   = a new page of physical memory
     int user_stack_limit = data_bss_limit + stack_npg; 
-    for (int i = data_bss_limit; i < user_stack_limit; i++) {
+    for (i = data_bss_limit; i < user_stack_limit; i++) {
 
         region0_pt[i].valid = VALID; 
         region0_pt[i].kprot = PROT_READ | PROT_WRITE; 
@@ -452,7 +535,7 @@ LoadProgram(char *name, char **args, ExceptionInfo *info)
      *  Read the text and data from the file into memory.
      */
     if (read(fd, (void *)MEM_INVALID_SIZE, li.text_size+li.data_size)
-	!= li.text_size+li.data_size) {
+	!= (int) (li.text_size+li.data_size)){
 	TracePrintf(0, "LoadProgram: couldn't read for '%s'\n", name);
 	free(argbuf);
 	close(fd);
@@ -472,7 +555,7 @@ LoadProgram(char *name, char **args, ExceptionInfo *info)
 
     // >>>> For text_npg number of PTEs corresponding to the user text
     // >>>> pages, set each PTE's kprot to PROT_READ | PROT_EXEC.
-    for (int i = MEM_INVALID_PAGES; i < text_pages_limit; i++) { 
+    for (i = MEM_INVALID_PAGES; i < text_pages_limit; i++) { 
 
         region0_pt[i].kprot = PROT_READ | PROT_EXEC; 
     }
@@ -496,7 +579,7 @@ LoadProgram(char *name, char **args, ExceptionInfo *info)
      */
     *cpp++ = (char *)argcount;		/* the first value at cpp is argc */
     cp2 = argbuf;
-    for (i = 0; i < argcount; i++) {      /* copy each argument and set argv */
+    for (i = 0; (uint) i < argcount; i++) {      /* copy each argument and set argv */
 	*cpp++ = cp;
 	strcpy(cp, cp2);
 	cp += strlen(cp) + 1;
@@ -519,7 +602,7 @@ LoadProgram(char *name, char **args, ExceptionInfo *info)
      */
     info->psr = 0; 
 
-    for (int i = 0; i < NUM_REGS; i++) {
+    for (i = 0; i < NUM_REGS; i++) {
 
         info->regs[i] = 0; 
     }
