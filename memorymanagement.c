@@ -87,65 +87,65 @@ void AddFreePage (int index, int pfn) {
  * PAGE TABLE HANDLING
 */
 
-void initPageTables() {
-    region0_pt = VMEM_1_LIMIT - PAGESIZE; 
-    region1_pt = VMEM_1_LIMIT - (PAGESIZE * 2);
+// void initPageTables() {
+//     region0_pt = VMEM_1_LIMIT - PAGESIZE; 
+//     region1_pt = VMEM_1_LIMIT - (PAGESIZE * 2);
 
-    for (int i = 0; i < VMEM_LIMIT >> PAGESHIFT; i++) {
+//     for (int i = 0; i < VMEM_LIMIT >> PAGESHIFT; i++) {
 
-        // Before Region 0 kernel stack in memory 
-        if (i < KERNEL_STACK_BASE >> PAGESHIFT) {
-            region0_pt[i].pfn = i; 
-            region0_pt[i].kprot = PROT_NONE; 
-            region0_pt[i].uprot = PROT_NONE; 
-            region0_pt[i].valid = INVALID; 
+//         // Before Region 0 kernel stack in memory 
+//         if (i < KERNEL_STACK_BASE >> PAGESHIFT) {
+//             region0_pt[i].pfn = i; 
+//             region0_pt[i].kprot = PROT_NONE; 
+//             region0_pt[i].uprot = PROT_NONE; 
+//             region0_pt[i].valid = INVALID; 
 
-        // In Region 0 kernel stack in memory 
-        } else if (i < KERNEL_STACK_LIMIT >> PAGESHIFT) {
-            region0_pt[i].pfn = i; 
-            region0_pt[i].kprot = PROT_READ | PROT_WRITE; 
-            region0_pt[i].uprot = PROT_NONE; 
-            region0_pt[i].valid = VALID; 
+//         // In Region 0 kernel stack in memory 
+//         } else if (i < KERNEL_STACK_LIMIT >> PAGESHIFT) {
+//             region0_pt[i].pfn = i; 
+//             region0_pt[i].kprot = PROT_READ | PROT_WRITE; 
+//             region0_pt[i].uprot = PROT_NONE; 
+//             region0_pt[i].valid = VALID; 
 
-        // In Region 1 kernel text pages of kernel heap in memory 
-        } else if (i < &_etext >> PAGESHIFT) {
-            region1_pt[i].pfn = i; 
-            region1_pt[i].kprot = PROT_EXEC; 
-            region1_pt[i].uprot = PROT_NONE; 
-            region1_pt[i].valid = VALID; 
+//         // In Region 1 kernel text pages of kernel heap in memory 
+//         } else if (i < &_etext >> PAGESHIFT) {
+//             region1_pt[i].pfn = i; 
+//             region1_pt[i].kprot = PROT_EXEC; 
+//             region1_pt[i].uprot = PROT_NONE; 
+//             region1_pt[i].valid = VALID; 
 
-        // In Region 1 kernel data/bss/heap pages of kernel heap in memory 
-        } else if (i < current_break >> PAGESHIFT) {
-            region1_pt[i].pfn = i; 
-            region1_pt[i].kprot = PROT_READ | PROT_WRITE; 
-            region1_pt[i].uprot = PROT_NONE; 
-            region1_pt[i].valid = VALID; 
+//         // In Region 1 kernel data/bss/heap pages of kernel heap in memory 
+//         } else if (i < current_break >> PAGESHIFT) {
+//             region1_pt[i].pfn = i; 
+//             region1_pt[i].kprot = PROT_READ | PROT_WRITE; 
+//             region1_pt[i].uprot = PROT_NONE; 
+//             region1_pt[i].valid = VALID; 
 
-        // In Region 1 space under our allocated data structures in memory 
-        } else if (i < VMEM_1_LIMIT - (PAGESIZE * 2)) {
-            region1_pt[i].pfn = i; 
-            region1_pt[i].kprot = PROT_NONE; 
-            region1_pt[i].uprot = PROT_NONE; 
-            region1_pt[i].valid = INVALID; 
+//         // In Region 1 space under our allocated data structures in memory 
+//         } else if (i < VMEM_1_LIMIT - (PAGESIZE * 2)) {
+//             region1_pt[i].pfn = i; 
+//             region1_pt[i].kprot = PROT_NONE; 
+//             region1_pt[i].uprot = PROT_NONE; 
+//             region1_pt[i].valid = INVALID; 
 
-        // In Region 1 space with our allocated data stuctures in memory 
-        } else {
-            region1_pt[i].pfn = i; 
-            region1_pt[i].kprot = PROT_READ | PROT_WRITE; 
-            region1_pt[i].uprot = PROT_NONE; 
-            region1_pt[i].valid = VALID; 
-        }
-    }
+//         // In Region 1 space with our allocated data stuctures in memory 
+//         } else {
+//             region1_pt[i].pfn = i; 
+//             region1_pt[i].kprot = PROT_READ | PROT_WRITE; 
+//             region1_pt[i].uprot = PROT_NONE; 
+//             region1_pt[i].valid = VALID; 
+//         }
+//     }
 
-    // Initialize the page table registers to point to their respective page tables 
-    WriteRegister(REG_PTR0, (RCS421RegVal) region0_pt); 
-    WriteRegister(REG_PTR1, (RCS421RegVal) region1_pt); 
-}
+//     // Initialize the page table registers to point to their respective page tables 
+//     WriteRegister(REG_PTR0, (RCS421RegVal) region0_pt); 
+//     WriteRegister(REG_PTR1, (RCS421RegVal) region1_pt); 
+// }
 
-void enable_VM() {
-    WriteRegister(REG_VM_ENABLE, 1);
-    vm_enabled = 1;
-}
+// void enable_VM() {
+//     WriteRegister(REG_VM_ENABLE, 1);
+//     vm_enabled = 1;
+// }
 
 /* Borrows a new PTE from the region 1 page table */
 void BorrowPTE () {

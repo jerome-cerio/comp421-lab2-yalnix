@@ -4,7 +4,6 @@
 
 int main () {
 
-    TracePrintf(1, "ran idle");
     while(true) {
 
         Pause(); 
