@@ -50,7 +50,7 @@ int GetFreePage () {
 
     // Borrow the page table entry from the top of the region 1 page table
     BorrowPTE();
-    pt1[borrowed_idx].pfn = pfn;
+    region1_pt[borrowed_idx].pfn = pfn;
 
     // Move to the next page in the list
     unsigned int *addr = (unsigned int*) borrowed_addr;
@@ -155,8 +155,8 @@ void BorrowPTE () {
     borrowed_idx--;
 
     // Temporarily buffers the current PTE if in use
-    if(pt1[borrowed_idx].valid) {
-        pte_buffer[pte_count] = pt1[borrowed_idx];
+    if(region1_pt[borrowed_idx].valid) {
+        pte_buffer[pte_count] = region1_pt[borrowed_idx];
         pte_count++;
 
         // Flushes the invalidated TLB entry
@@ -164,8 +164,8 @@ void BorrowPTE () {
     }
 
     // Initializes the PTE
-    pt1[borrowed_idx].valid = 1;
-    pt1[borrowed_idx].kprot = PROT_READ | PROT_WRITE;
+    region1_pt[borrowed_idx].valid = 1;
+    region1_pt[borrowed_idx].kprot = PROT_READ | PROT_WRITE;
 }
 
 

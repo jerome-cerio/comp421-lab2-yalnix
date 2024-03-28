@@ -3,6 +3,8 @@
 #include <comp421/yalnix.h>
 #include <comp421/hardware.h>
 
+#include "processes.h"
+
 #define VALID   1 
 #define INVALID 0
 #define FREE 1
@@ -188,6 +190,31 @@ void trap_illegal_handler(ExceptionInfo *info) {
 }
 
 void trap_memory_handler(ExceptionInfo *info) {
+    TracePrint(3, "Memory trap\n");
+    
+    int start_page_idx;
+    int end_page_idx;
+
+    // Get the address that caused the exception.
+    uintptr_t trap_addr = (uintptr_t) info->addr
+
+    // Check if user stack needs to be grown.
+    if (trap_addr >= UP_TO_PAGE(active->brk) + PAGESIZE && trap_addr < active->user_stack_base) {
+        TracePrintf(3, "attempting to grow user stack of process %d", active->pid);
+
+        // Find pages that need to be allocated.
+        start_page_idx = (DOWN_TO_PAGE(trap_addr) - VMEM_0_BASE) >> PAGESHIFT;
+        end_page_idx = (active->user_stack_base - VMEM_0_BASE) >> PAGESHIFT;
+
+        // Check for free pages
+        if (end_page_idx - start_page_idx > free_npg) {
+            TracePrintf(3, "process %d: insufficient number of free pages\n", active->pid)
+            
+        }
+
+
+    }
+
 
 }
 

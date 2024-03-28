@@ -17,7 +17,7 @@ unsigned int num_free_tables;
 
 // Stores the address of the region 1 page table
 uintptr_t ptaddr1;
-struct pte *pt1;
+//struct pte *pt1;
 
 // Stores the address and index of a borrowed PTE
 void *borrowed_addr;
