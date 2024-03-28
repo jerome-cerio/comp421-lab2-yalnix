@@ -8,6 +8,9 @@
 #include <comp421/loadinfo.h>
 
 #include "processes.h"
+#include "queue.h"
+#include "processes.h"
+#include "memorymanagement.h"
 
 #define VALID   1 
 #define INVALID 0
@@ -303,9 +306,37 @@ void trap_kernel_handler(ExceptionInfo *info) {
 
 void trap_clock_handler(ExceptionInfo *info) {
 
-    (void) info;
-    TracePrintf(1, "trap clock handler"); 
-    Halt(); 
+    TracePrintf(5, "trap clock interrupt - in handler\n");
+
+    struct pcb *ready_process, *new_process;
+
+    // Updates clock ticks for all processes in the blocked list
+    clockl(&blocked);
+
+    // Moves processes from the blocked queue to the ready queue
+    while((ready_process = readyl(&blocked))) {
+        ready_process->state = READY;
+        deletel(&blocked, ready_process);
+        enq(&ready, ready_process);
+    }
+
+    // Checks if the time quantum for the process is up
+    quantum++;
+    if(quantum >= 2) {
+
+        // Checks if the ready queue has a process
+        if(qempty(ready))
+            return;
+
+        // Resets the time quantum for the new process
+        quantum = 0;
+
+        // Gets a new process to make active
+        new_process = MoveProcesses(READY, &ready);
+
+        // Switches to the new process
+        ContextSwitch(Switch, &active->ctx, (void*) active, (void*) new_process);
+    }
 }
 
 void trap_illegal_handler(ExceptionInfo *info) {

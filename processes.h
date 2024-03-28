@@ -24,6 +24,19 @@ struct pcb_node {
     struct pcb_node *next;
 };
 
+// Structure of a process list
+struct proclist {
+    struct pcb_frame *head;
+    int size;
+};
+
+// Declares structures to allow PCB manipulation
+struct pcb;
+struct pcb_frame;
+
+// Manages the blocked processes
+struct proclist blocked;
+
 // Storing the active process.
 struct pcb *active;
 
